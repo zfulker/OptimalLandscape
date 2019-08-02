@@ -1,72 +1,76 @@
 library(GPfit)
 library(lhs)
 library(entropy)
-#library(ggplot2)
-#library(scales)
-#library(RColorBrewer)
-#library(gridExtra)
-#library(sensitivity)
+library(foreach)
+library(doParallel)
+library(data.table)
+source("C:/Users/Owner/Dropbox/Northeastern/Lab/Search/Code/OptimalLandscape/GP_Models.R")
+source("C:/Users/Owner/Dropbox/Northeastern/Lab/Search/Code/OptimalLandscape/Perlin_Landscape_Generator.R")
+cores <- detectCores() - 1
+registerDoParallel(cores=cores)
 
-source("C:/Users/Owner/Dropbox/GaussianProcessPerlinLandscapes/Tsunami/MLProject/Perlin_landscape_generator.R") #C:/Users/Owner/Dropbox/GaussianProcessPerlinLandscapes/Tsunami/MLProject/
-source("C:/Users/Owner/Dropbox/GaussianProcessPerlinLandscapes/Tsunami/MLProject/Optimal_Perlin_helper.R") #C:/Users/Owner/Dropbox/GaussianProcessPerlinLandscapes/Tsunami/MLProject/
+########################################
+############### Inputs ################# 
+########################################
+landscape_side_length <- 5
+lower_search_para <- 2
+upper_search_para <- 4
+########################################
 
 # datagrid for search landscape
-range=c(1,20)
+range<-c(1,landscape_side_length)
 datagrid <- expand.grid(X=seq(range[1], range[2], 1), Y=seq(range[1], range[2], 1))
 datagrid <- as.data.frame(apply(datagrid,2,normalize_col))
 datagrid_dict <- c(1:range[2])
 names(datagrid_dict) <- round(datagrid$X[1:range[2]], 3)
 
-# datagrid for optimal search
-optimal_range=c(2,7)
+# datagrid for optimal landscape parameters
+optimal_range=c(lower_search_para,upper_search_para)
 optimal_datagrid <- expand.grid(X=seq(optimal_range[1], optimal_range[2], 1), Y=seq(optimal_range[1], optimal_range[2], 1), Z=seq(optimal_range[1], optimal_range[2], 1))
 optimal_datagrid <- as.data.frame(apply(optimal_datagrid,2,normalize_col))
-optimal_datagrid_dict <- c(2:optimal_range[2])
-names(optimal_datagrid_dict) <- round(optimal_datagrid$X[1:(optimal_range[2]-1)], 3)
+optimal_datagrid_dict <- c(optimal_range[1]:optimal_range[2])
+names(optimal_datagrid_dict) <- round(optimal_datagrid$X[1:(optimal_range[2]-(optimal_range[1]-1))], 3)
 
-# history <- run_optimal_search(datagrid, datagrid_dict, optimal_datagrid, optimal_datagrid_dict)
-# 
-history <- read.csv('C:/Users/Owner/Dropbox/GaussianProcessPerlinLandscapes/Tsunami/MLProject/results_2ndtry.csv')
+# run model
+ptm <- proc.time()
+history <- run_optimal_search(datagrid, datagrid_dict, optimal_datagrid, optimal_datagrid_dict)
+stopImplicitCluster()
+print(proc.time() - ptm)
+
+
+# results
 GPredict_final <- run_gp_optimal(history, optimal_datagrid)
-experiment_point <- as.data.frame(GPredict_final$complete_data[order(-GPredict_final$Y_hat),])$xnew.3[] #which.max(GPredict_final$Y_hat),
+optimal_point <- GPredict_final$complete_data[which.max(GPredict_final$Y_hat),]
 worst_point <- GPredict_final$complete_data[which.min(GPredict_final$Y_hat),]
-print(experiment_point)
-print(worst_point)
-# 
-# write.csv(history, file = 'results_longrun.csv')
+print(paste('Optimal Experiment Point: ',optimal_point[1],optimal_point[2],optimal_point[3]))
+print(paste('Least Optimal Experiment Point: ',worst_point[1],worst_point[2],worst_point[3]))
 
-# plot rand land 
-#my_palette <- colorRampPalette(c("aquamarine", "yellow", 'red'))(n = 299)
-# map1 <- getMap(n=3, m=2,exponent=6, dimx=range[2], dimy=range[2])
-#map1 <- getMap(n=7, m=2,exponent=4, dimx=range[2], dimy=range[2])
-#heatmap(map1, Rowv=NA, Colv = NA, labRow = NA, labCol = NA, col = my_palette)
-# 
-# # currently assuming single given landscape
-# map1 <- getMap(n=3, m=2,exponent=6, dimx=range[2], dimy=range[2])
-# 
-# rand_history <- run_many_times(datagrid, map1, datagrid_dict, searchType='Random')
-# rand_oil <- get_avg_results(rand_history, 'Oil')
-# rand_regret <- get_avg_results(rand_history, 'Regret')
-# 
-# explore_history <- run_many_times(datagrid, map1, datagrid_dict, searchType='Exploration')
-# explore_oil <- get_avg_results(explore_history, 'Oil')
-# explore_regret <- get_avg_results(explore_history, 'Regret')
-# 
-# exploit_history <- run_many_times(datagrid, map1, datagrid_dict, searchType='Exploitation')
-# exploit_oil <- get_avg_results(exploit_history, 'Oil')
-# exploit_regret <- get_avg_results(exploit_history, 'Regret')
-# 
-# GPUCB_history <- run_many_times(datagrid, map1, datagrid_dict, searchType='GPUCB')
-# GPUCB_oil <- get_avg_results(GPUCB_history, 'Oil')
-# GPUCB_regret <- get_avg_results(GPUCB_history, 'Regret')
-# 
-# GPUCB_PE_history <- run_many_times(datagrid, map1, datagrid_dict, searchType='GPUCB_PE')
-# GPUCB_PE_oil <- get_avg_results(GPUCB_PE_history, 'Oil')
-# GPUCB_PE_regret <- get_avg_results(GPUCB_PE_history, 'Regret')
-# 
-# plot_method_results(rand_oil, exploit_oil, explore_oil, GPUCB_oil, GPUCB_PE_oil, 'Oil')
-# 
-# plot_method_results(rand_regret, exploit_regret, explore_regret, GPUCB_regret, GPUCB_PE_regret, 'Regret') 
+# visualize results
+my_palette <- colorRampPalette(c("aquamarine", "yellow", 'red'))(n = 299)
+optimal_n = optimal_datagrid_dict[[as.character(round(optimal_point[1],3))]]
+optimal_m = optimal_datagrid_dict[[as.character(round(optimal_point[2],3))]]
+optimal_e = optimal_datagrid_dict[[as.character(round(optimal_point[3],3))]]
+optimal_map <- getMap(n=optimal_n, m=optimal_m,exponent=optimal_e, dimx=range[2], dimy=range[2])
+worst_n = optimal_datagrid_dict[[as.character(round(worst_point[1],3))]]
+worst_m = optimal_datagrid_dict[[as.character(round(worst_point[2],3))]]
+worst_e = optimal_datagrid_dict[[as.character(round(worst_point[3],3))]]
+worst_map <- getMap(n=worst_n, m=worst_m,exponent=worst_e, dimx=range[2], dimy=range[2])
+heatmap(optimal_map, Rowv=NA, Colv = NA, labRow = NA, labCol = NA, col = my_palette, main = 'Optimal Landscape')
+heatmap(worst_map, Rowv=NA, Colv = NA, labRow = NA, labCol = NA, col = my_palette, main = 'Worst Landscape')
 
-#oil_results <- read.csv('C:/Users/Owner/Dropbox/GaussianProcessPerlinLandscapes/Tsunami/MLProject/Oilnewbest.csv')
-#get_divergance(oil_results[1,][2:16], oil_results[2,][2:16], oil_results[3,][2:16], oil_results[4,][2:16], oil_results[5,][2:16])
+# save results 
+write.csv(history, file = paste('results_', landscape_side_length**2, '_', lower_search_para, '_', upper_search_para, '_RA'))
+
+temp <- function(x){
+  return(x**2)
+}
+
+cores <- detectCores() - 2
+registerDoParallel(cores=cores)
+
+out <- foreach( i = 1:100 ) %dopar% {
+  # run simulation
+  square <- temp(i)
+  data.frame(Mean=square, AnotherCOumn=length(t))
+}
+out <- rbindlist(out)

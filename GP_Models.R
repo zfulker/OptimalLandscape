@@ -70,7 +70,7 @@ calc_regret <- function(history, map){
 get_avg_results <- function(history, col_name){
   for(i in sort(unique(history$Iteration))){
     iteration_history <- subset(history, Iteration==i)
-    search_history <- iteration_history[,col_name]
+    search_history <- iteration_history[,col_name, with=FALSE]
     if(length(search_history) < 15){ # add obs for early termination
       last_val = search_history[length(search_history)]
       for(j in (length(search_history)+1):15){search_history[j]<-last_val}
@@ -144,19 +144,14 @@ run_algorithm_once <- function(datagrid, map, datagrid_dict, searchType, n_init=
   return(history)
 }
 
-run_many_times <- function(datagrid, map, datagrid_dict, searchType, n_init=4, rho0=0.001, failsafe = 15, L = 4, n_times=25){
-  out <- data.frame()
-  i <- 1
-  while(i <= n_times){
+run_many_times <- function(datagrid, map, datagrid_dict, searchType, n_init=4, rho0=0.001, failsafe = 15, L = 4, n_times=3){
+  
+  out <- foreach(i = 1:n_times, .export=c('run_algorithm_once','initialize_process','randomRows','getInfoNumber','calc_regret','sample_next','add_random_sampled_point','run_gp','GP_fit','stopping_criteria','discounted_rank_dissimilarity','get_rank_distances','get_max_distance','add_exploration_point','add_exploitation_point','add_random_sampled_point','add_gpucb_point','add_gpucb_pe_point')) %dopar% {
     history <- run_algorithm_once(datagrid, map, datagrid_dict, searchType)
-    #		history <- try(run_algorithm_once(total_grid,search,n_init,rho0,failsafe,L))
-    #		if(class(history)!="try-error") {
     history$Iteration <- i
-    out <- rbind(out, history)
-    #print(paste("Finished iteration: ", i, sep=""))
-    i <- i + 1
-    #		} 
+    history
   }
+  out <- rbindlist(out)
   return(out)
 }
 
