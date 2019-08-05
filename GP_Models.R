@@ -47,7 +47,8 @@ initialize_process <- function(datagrid, datagrid_dict, SearchType, n_init, map,
   history$SearchType <- SearchType        
   history$Stop <- 0
   history <- calc_regret(history, map)
-  return(history)
+  GPredict_curr <- run_gp(history, datagrid)
+  return(list(history, GPredict_curr))
 }
 
 ##############
@@ -71,10 +72,10 @@ get_avg_results <- function(history, col_name){
   for(i in sort(unique(history$Iteration))){
     iteration_history <- subset(history, Iteration==i)
     search_history <- iteration_history[,col_name, with=FALSE]
-    if(length(search_history) < 15){ # add obs for early termination
-      last_val = search_history[length(search_history)]
-      for(j in (length(search_history)+1):15){search_history[j]<-last_val}
-    }
+    #if(length(search_history) < 15){ # add obs for early termination THIS IS NOT WORKING BC LENGTH = 1!!!!!!!!!!!
+      #last_val = search_history[length(search_history)]
+      #for(j in (length(search_history)+1):15){search_history[j]<-last_val}
+    #}
     if(i == 1){
       avg_cumreg <- search_history
     } else {
@@ -101,51 +102,57 @@ run_gp <- function(history, datagrid){
   return(GPredict)
 }
 
-sample_next <- function(history, datagrid, datagrid_dict, current_round, map){
+sample_next <- function(history, datagrid, datagrid_dict, current_round, map, GP_Prev){
   method <- history$SearchType[1]
   if(method=="Random"){
-    history <- add_random_sampled_point(history, datagrid, datagrid_dict, current_round, map)
+    return_list <- add_random_sampled_point(history, datagrid, datagrid_dict, current_round, map, GP_Prev)
   }
   if(method=="GPUCB"){
-    history <- add_gpucb_point(history, datagrid, datagrid_dict, current_round, map)
+    return_list <- add_gpucb_point(history, datagrid, datagrid_dict, current_round, map, GP_Prev)
   }
   if(method=="GPUCB_PE"){
-    history <- add_gpucb_pe_point(history, datagrid, datagrid_dict, current_round, map)
+    return_list <- add_gpucb_pe_point(history, datagrid, datagrid_dict, current_round, map, GP_Prev)
   }
   if(method=="Exploration"){
-    history <- add_exploration_point(history, datagrid, datagrid_dict, current_round, map)
+    return_list <- add_exploration_point(history, datagrid, datagrid_dict, current_round, map, GP_Prev)
   }
   if(method=="Exploitation"){
-    history <- add_exploitation_point(history, datagrid, datagrid_dict, current_round, map)
+    return_list <- add_exploitation_point(history, datagrid, datagrid_dict, current_round, map, GP_Prev)
   }
-  return(history)
+  return(return_list)
 }
 
-run_algorithm_once <- function(datagrid, map, datagrid_dict, searchType, n_init=4, rho0=0.001, failsafe = 15, L = 4){
+run_algorithm_once <- function(datagrid, map, datagrid_dict, searchType, n_init=4, rho0=0.001, failsafe = 26, L = 4){
+  #FAILSAFE MUST BE EVEN SENSE GPUCBPE ALWAYS SAMPLES TWICE!!!!
   current_round <- n_init
-  history <- initialize_process(datagrid, datagrid_dict, searchType, n_init, map, sobol = 'Random')
+  return_list <- initialize_process(datagrid, datagrid_dict, searchType, n_init, map, sobol = 'Random')
+  history <- data.frame(return_list[1])
+  GP_Prev <- return_list[2]
   tick <- 1
   if(searchType == "GPUCB_PE"){
     tick <- 2
     L <- round(L/2)
   }
   for(i in 1:L){
-    history <- sample_next(history, datagrid, datagrid_dict, current_round, map)
+    return_list <- sample_next(history, datagrid, datagrid_dict, current_round, map, GP_Prev)
+    history <- data.frame(return_list[1])
+    GP_Prev <- return_list[2]
     current_round <- current_round + tick
   }
   while(current_round < failsafe){
-    history <- sample_next(history, datagrid, datagrid_dict, current_round, map)
+    return_list <- sample_next(history, datagrid, datagrid_dict, current_round, map, GP_Prev)
+    history <- data.frame(return_list[1])
+    GP_Prev <- return_list[2]
     current_round <- current_round + tick
-    #print(paste0("Current Round is: ", current_round," and stop == ",sum(1-tail(history,L)$Stop)))
-    if(sum(1-tail(history,L)$Stop)<4*rho0){
-      return(history)
-    }		
+    #Check stoping criteria
+    #if(sum(1-tail(history,L)$Stop)<4*rho0){
+      #return(history)
+    #}		
   }
   return(history)
 }
 
-run_many_times <- function(datagrid, map, datagrid_dict, searchType, n_init=4, rho0=0.001, failsafe = 15, L = 4, n_times=3){
-  
+run_many_times <- function(datagrid, map, datagrid_dict, searchType, n_init=4, rho0=0.001, L = 4, n_times=32){ #failsafe = 16,
   out <- foreach(i = 1:n_times, .export=c('run_algorithm_once','initialize_process','randomRows','getInfoNumber','calc_regret','sample_next','add_random_sampled_point','run_gp','GP_fit','stopping_criteria','discounted_rank_dissimilarity','get_rank_distances','get_max_distance','add_exploration_point','add_exploitation_point','add_random_sampled_point','add_gpucb_point','add_gpucb_pe_point')) %dopar% {
     history <- run_algorithm_once(datagrid, map, datagrid_dict, searchType)
     history$Iteration <- i
@@ -160,8 +167,8 @@ run_many_times <- function(datagrid, map, datagrid_dict, searchType, n_init=4, r
 #########################
 
 # Random Digging
-add_random_sampled_point <- function(history, datagrid, datagrid_dict, current_round, map){
-  GPredict_prev <- run_gp(history, datagrid)
+add_random_sampled_point <- function(history, datagrid, datagrid_dict, current_round, map, GP_Prev){
+  GPredict_prev <- GP_Prev[[1]]
   coords <- as.numeric(datagrid[sample(nrow(datagrid), 1),])
   while(all(coords %in% history[,c("X", "Y")])){ 
     coords <- as.numeric(datagrid[sample(nrow(datagrid), 1),])
@@ -173,17 +180,17 @@ add_random_sampled_point <- function(history, datagrid, datagrid_dict, current_r
   new_point$Regret <- 1 
   new_point$CumulRegret <- 1
   history_curr <- rbind(history, new_point)
-  history_curr <- calc_regret(history_curr, map)	
+  history_curr <- calc_regret(history_curr, map)
   GPredict_curr <- run_gp(history_curr, datagrid)	
   stop <- stopping_criteria(GPredict_prev, GPredict_curr)
   history <- calc_regret(history_curr, map)
   history$Stop[max(history$Round)] <- stop
-  return(history)
+  return(list(history, GPredict_curr))
 }
 
 # Exploit Digging: choose coordinate with maximum mean
-add_exploitation_point <- function(history, datagrid, datagrid_dict, current_round, map){ 
-  GPredict_prev <- run_gp(history, datagrid)
+add_exploitation_point <- function(history, datagrid, datagrid_dict, current_round, map, GP_Prev){ 
+  GPredict_prev <- GP_Prev[[1]]
   
   exploit_point <- GPredict_prev$complete_data[which.max(GPredict_prev$Y_hat),]	
   coords <- as.numeric(exploit_point[1:2])
@@ -199,13 +206,13 @@ add_exploitation_point <- function(history, datagrid, datagrid_dict, current_rou
   stop <- stopping_criteria(GPredict_prev, GPredict_curr)
   history <- calc_regret(history_curr, map)
   history$Stop[max(history$Round)] <- stop
-  return(history)
+  return(list(history, GPredict_curr))
 }
 
 
 # Explore Digging: choose coordinate with maximum Mean Squared Error
-add_exploration_point <- function(history, datagrid, datagrid_dict, current_round, map){
-  GPredict_prev <- run_gp(history, datagrid)
+add_exploration_point <- function(history, datagrid, datagrid_dict, current_round, map, GP_Prev){
+  GPredict_prev <- GP_Prev[[1]]
   
   explore_point <- GPredict_prev$complete_data[which.max(GPredict_prev$MSE),]	
   coords <- as.numeric(explore_point[1:2])
@@ -221,12 +228,12 @@ add_exploration_point <- function(history, datagrid, datagrid_dict, current_roun
   stop <- stopping_criteria(GPredict_prev, GPredict_curr)
   history <- calc_regret(history_curr, map)
   history$Stop[max(history$Round)] <- stop
-  return(history)
+  return(list(history, GPredict_curr))
 }
 
 # GPUCB Digging: choose coordinate with maximum Mean + Upper MSE
-add_gpucb_point <- function(history, datagrid, datagrid_dict, current_round, map){ 
-  GPredict_prev <- run_gp(history, datagrid)
+add_gpucb_point <- function(history, datagrid, datagrid_dict, current_round, map, GP_Prev){ 
+  GPredict_prev <- GP_Prev[[1]]
   
   # find upper confidence bound
   y_plus_sigma  <- GPredict_prev$Y_hat + 2*(GPredict_prev$MSE)**.5
@@ -244,16 +251,16 @@ add_gpucb_point <- function(history, datagrid, datagrid_dict, current_round, map
   stop <- stopping_criteria(GPredict_prev, GPredict_curr)
   history <- calc_regret(history_curr, map)
   history$Stop[max(history$Round)] <- stop
-  return(history)
+  return(list(history, GPredict_curr))
 }
 
 # GPUCB Digging: choose coordinate with maximum Mean + Upper MSE, AND a point
 # with the highest *lower bound* within a certain region
-add_gpucb_pe_point <- function(history, datagrid, datagrid_dict, current_round, map, k=1){
+add_gpucb_pe_point <- function(history, datagrid, datagrid_dict, current_round, map, GP_Prev, k=1){
   ############
   ### UCB step
   ############
-  GPredict_prev <- run_gp(history, datagrid)
+  GPredict_prev <- GP_Prev[[1]]
   
   # find upper confidence bound
   y_plus_sigma  <- GPredict_prev$Y_hat + 2*(GPredict_prev$MSE)**.5
@@ -298,7 +305,7 @@ add_gpucb_pe_point <- function(history, datagrid, datagrid_dict, current_round, 
       history$Stop[max(history$Round)] <- stop		
       current_round <- current_round + 1		
     }
-    return(history)
+    return(list(history, GPredict_curr))
   }
   else {
     PE_point <- history[which.max(history$Oil),]
@@ -315,7 +322,7 @@ add_gpucb_pe_point <- function(history, datagrid, datagrid_dict, current_round, 
     stop <- stopping_criteria(GPredict_prev, GPredict_curr)
     history <- calc_regret(history_curr, map)
     history$Stop[max(history$Round)] <- stop					
-    return(history)		
+    return(list(history, GPredict_curr))		
   }
 }
 

@@ -3,18 +3,18 @@ library(lhs)
 library(entropy)
 library(foreach)
 library(doParallel)
-library(data.table)
+#library(data.table)
 source("C:/Users/Owner/Dropbox/Northeastern/Lab/Search/Code/OptimalLandscape/GP_Models.R")
 source("C:/Users/Owner/Dropbox/Northeastern/Lab/Search/Code/OptimalLandscape/Perlin_Landscape_Generator.R")
-cores <- detectCores() - 1
+cores <- detectCores()
 registerDoParallel(cores=cores)
 
 ########################################
 ############### Inputs ################# 
 ########################################
-landscape_side_length <- 5
+landscape_side_length <- 20
 lower_search_para <- 2
-upper_search_para <- 4
+upper_search_para <- 7
 ########################################
 
 # datagrid for search landscape
@@ -60,17 +60,3 @@ heatmap(worst_map, Rowv=NA, Colv = NA, labRow = NA, labCol = NA, col = my_palett
 
 # save results 
 write.csv(history, file = paste('results_', landscape_side_length**2, '_', lower_search_para, '_', upper_search_para, '_RA'))
-
-temp <- function(x){
-  return(x**2)
-}
-
-cores <- detectCores() - 2
-registerDoParallel(cores=cores)
-
-out <- foreach( i = 1:100 ) %dopar% {
-  # run simulation
-  square <- temp(i)
-  data.frame(Mean=square, AnotherCOumn=length(t))
-}
-out <- rbindlist(out)
