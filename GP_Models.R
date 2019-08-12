@@ -431,8 +431,9 @@ get_landscape_search_results <- function(x, y, z, datagrid, datagrid_dict, optim
 }
 
 run_gp_optimal <- function(history, datagrid){
-  evidence <- unique(history[,c("X", "Y", "Z", "Div")])
-  gp_model <- GP_fit(evidence[,c("X", "Y", "Z")], evidence$Div) #evidence[,c("X", "Y")]
+  evidence <- history[,c("X", "Y", "Z", "Div")]
+  evidence <- evidence[!duplicated(evidence[1:3]),] #place holder until figure out how to do stochastic functions
+  gp_model <- GP_fit(evidence[,c("X", "Y", "Z")], evidence$Div)
   GPredict <- predict(gp_model, datagrid)
   return(GPredict)
 }
